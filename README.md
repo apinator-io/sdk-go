@@ -4,7 +4,7 @@
 [![CI](https://github.com/apinator-io/sdk-go/actions/workflows/test.yml/badge.svg)](https://github.com/apinator-io/sdk-go/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Go server SDK for Apinator — trigger real-time events, authenticate channels, and verify webhooks.
+Go server SDK for Apinator — trigger real-time events, authenticate channels.
 
 ## Features
 
