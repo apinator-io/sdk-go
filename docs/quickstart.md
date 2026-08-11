@@ -56,24 +56,34 @@ When a client subscribes to a private or presence channel, your server must auth
 
 ```go
 http.HandleFunc("/realtime/auth", func(w http.ResponseWriter, r *http.Request) {
-    r.ParseForm()
+    var req struct {
+        SocketID    string `json:"socket_id"`
+        ChannelName string `json:"channel_name"`
+    }
 
-    socketID := r.FormValue("socket_id")
-    channelName := r.FormValue("channel_name")
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "bad request", http.StatusBadRequest)
+        return
+    }
 
     // For private channels
-    auth := client.AuthenticateChannel(socketID, channelName, nil)
+    auth := client.AuthenticateChannel(req.SocketID, req.ChannelName, nil)
 
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(auth)
 })
 ```
 
+The client SDKs POST a JSON body (`Content-Type: application/json`), so decode `r.Body` —
+`r.ParseForm()` will not populate anything.
+
 For presence channels, include channel data with the user's identity:
 
 ```go
-channelData := `{"user_id": "user-123", "user_info": {"name": "Alice"}}`
-auth := client.AuthenticateChannel(socketID, channelName, &channelData)
+if strings.HasPrefix(req.ChannelName, "presence-") {
+    channelData := `{"user_id": "user-123", "user_info": {"name": "Alice"}}`
+    auth = client.AuthenticateChannel(req.SocketID, req.ChannelName, &channelData)
+}
 ```
 
 ## Webhook Verification

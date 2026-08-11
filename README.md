@@ -71,15 +71,18 @@ func main() {
 	client := apinator.NewClient("app-id", "key", "secret", "eu")
 
 	http.HandleFunc("/realtime/auth", func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
+		// The client SDKs POST a JSON body.
+		var req struct {
+			SocketID    string `json:"socket_id"`
+			ChannelName string `json:"channel_name"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 
-		socketID := r.FormValue("socket_id")
-		channelName := r.FormValue("channel_name")
-
-		auth := client.AuthenticateChannel(socketID, channelName, nil)
+		auth := client.AuthenticateChannel(req.SocketID, req.ChannelName, nil)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(auth)
@@ -93,7 +96,7 @@ For presence channels, include `channel_data`:
 
 ```go
 channelData := `{"user_id": "123", "user_info": {"name": "Alice"}}`
-auth := client.AuthenticateChannel(socketID, channelName, &channelData)
+auth := client.AuthenticateChannel(req.SocketID, req.ChannelName, &channelData)
 ```
 
 ## Webhook Verification

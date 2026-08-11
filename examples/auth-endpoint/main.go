@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	apinator "github.com/apinator-io/sdk-go"
 )
@@ -22,13 +23,19 @@ func main() {
 			return
 		}
 
-		if err := r.ParseForm(); err != nil {
+		// The client SDKs POST a JSON body.
+		var req struct {
+			SocketID    string `json:"socket_id"`
+			ChannelName string `json:"channel_name"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 
-		socketID := r.FormValue("socket_id")
-		channelName := r.FormValue("channel_name")
+		socketID := req.SocketID
+		channelName := req.ChannelName
 
 		if socketID == "" || channelName == "" {
 			http.Error(w, "missing socket_id or channel_name", http.StatusBadRequest)
@@ -40,7 +47,7 @@ func main() {
 
 		var auth apinator.ChannelAuthResponse
 
-		if channelName[:9] == "presence-" {
+		if strings.HasPrefix(channelName, "presence-") {
 			// For presence channels, include user identity
 			channelData := `{"user_id": "user-123", "user_info": {"name": "Alice"}}`
 			auth = client.AuthenticateChannel(socketID, channelName, &channelData)
