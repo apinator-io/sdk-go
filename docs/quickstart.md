@@ -88,23 +88,29 @@ if strings.HasPrefix(req.ChannelName, "presence-") {
 
 ## Webhook Verification
 
-Verify that incoming webhooks are sent by Apinator:
+Verify that incoming webhooks are sent by Apinator. Use the webhook endpoint's
+signing secret (`whsec_...`, shown in the console per endpoint), not the app's API
+secret:
 
 ```go
+webhookSecret := os.Getenv("APINATOR_WEBHOOK_SECRET")
+
 http.HandleFunc("/webhooks", func(w http.ResponseWriter, r *http.Request) {
     body, _ := io.ReadAll(r.Body)
 
-    if !client.VerifyWebhook(r.Header, body, 5*time.Minute) {
+    if !client.VerifyWebhook(webhookSecret, r.Header, body, 5*time.Minute) {
         http.Error(w, "invalid signature", http.StatusUnauthorized)
         return
     }
 
-    // Webhook is authentic — process the payload
+    // Webhook is authentic. Body:
+    // {"id":"...","event":"member_added","app_id":"...","channel":"presence-room","user_id":"42","time_ms":1760000000000}
+    // Deliveries are at-least-once: dedupe on "id".
     w.WriteHeader(http.StatusOK)
 })
 ```
 
-The `maxAge` parameter (e.g. `5*time.Minute`) rejects webhooks with timestamps older than the specified duration. Pass `0` to skip the timestamp check.
+The `maxAge` parameter (`5*time.Minute` recommended) rejects webhooks with timestamps older than the specified duration or more than 300 seconds in the future. Pass `0` to skip the timestamp check.
 
 ## Next Steps
 

@@ -2,10 +2,13 @@ package apinator
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type hmacFixture struct {
@@ -41,13 +44,35 @@ type webhookFixture struct {
 		Body              string `json:"body"`
 		ExpectedSignature string `json:"expected_signature"`
 	} `json:"cases"`
+	VerifyCases []struct {
+		Name            string                     `json:"name"`
+		Secret          string                     `json:"secret"`
+		SigningSecret   string                     `json:"signing_secret"`
+		Body            string                     `json:"body"`
+		TimestampOffset int64                      `json:"timestamp_offset"`
+		MaxAge          *int64                     `json:"max_age"`
+		Headers         map[string]json.RawMessage `json:"headers"`
+		ExpectedValid   bool                       `json:"expected_valid"`
+	} `json:"verify_cases"`
 }
 
 func loadFixture[T any](t *testing.T, name string) T {
 	t.Helper()
+	return loadFixtureAt[T](t, filepath.Join("..", "..", "backend", "specs", "conformance", name))
+}
+
+// loadWebhookFixture loads the webhook fixture shared from the Node SDK
+// (sdks/node/test/fixtures), which also carries the verification cases.
+func loadWebhookFixture(t *testing.T) webhookFixture {
+	t.Helper()
+	return loadFixtureAt[webhookFixture](t, filepath.Join("..", "node", "test", "fixtures", "webhook-signature.v1.json"))
+}
+
+func loadFixtureAt[T any](t *testing.T, p string) T {
+	t.Helper()
 
 	var v T
-	p := filepath.Join("..", "..", "backend", "specs", "conformance", name)
+	name := filepath.Base(p)
 	b, err := os.ReadFile(p)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -87,11 +112,52 @@ func TestConformance_ChannelVectors(t *testing.T) {
 }
 
 func TestConformance_WebhookVectors(t *testing.T) {
-	fx := loadFixture[webhookFixture](t, "webhook-signature.v1.json")
+	fx := loadWebhookFixture(t)
 	for _, c := range fx.Cases {
 		got := SignWebhookPayload(c.Secret, c.Timestamp, []byte(c.Body))
 		if got != c.ExpectedSignature {
 			t.Fatalf("case %s: expected signature %s, got %s", c.Name, c.ExpectedSignature, got)
+		}
+	}
+}
+
+func TestConformance_WebhookVerifyCases(t *testing.T) {
+	fx := loadWebhookFixture(t)
+	if len(fx.VerifyCases) == 0 {
+		t.Fatal("fixture has no verify_cases")
+	}
+
+	for _, c := range fx.VerifyCases {
+		timestamp := strconv.FormatInt(time.Now().Unix()+c.TimestampOffset, 10)
+		signingSecret := c.SigningSecret
+		if signingSecret == "" {
+			signingSecret = c.Secret
+		}
+		signature := SignWebhookPayload(signingSecret, timestamp, []byte(c.Body))
+		fill := strings.NewReplacer("{timestamp}", timestamp, "{signature}", signature).Replace
+
+		headers := http.Header{}
+		for name, raw := range c.Headers {
+			var values []string
+			if err := json.Unmarshal(raw, &values); err != nil {
+				var single string
+				if err := json.Unmarshal(raw, &single); err != nil {
+					t.Fatalf("case %s: header %s is neither string nor array", c.Name, name)
+				}
+				values = []string{single}
+			}
+			for _, v := range values {
+				headers.Add(name, fill(v))
+			}
+		}
+
+		var maxAge time.Duration
+		if c.MaxAge != nil {
+			maxAge = time.Duration(*c.MaxAge) * time.Second
+		}
+
+		if got := VerifyWebhook(c.Secret, headers, []byte(c.Body), maxAge); got != c.ExpectedValid {
+			t.Errorf("case %s: expected valid=%v, got %v", c.Name, c.ExpectedValid, got)
 		}
 	}
 }

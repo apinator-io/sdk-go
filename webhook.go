@@ -10,9 +10,19 @@ import (
 	"time"
 )
 
+// WebhookMaxFutureSkew is how far in the future a webhook timestamp may be
+// before VerifyWebhook rejects it, when maxAge > 0. It allows for clock skew
+// between Apinator and the receiver.
+const WebhookMaxFutureSkew = 300 * time.Second
+
 // VerifyWebhook verifies a webhook signature.
+//
+// secret is the webhook endpoint's signing secret (whsec_..., shown in the
+// console per endpoint), not the app's API secret.
+//
 // Checks the X-Realtime-Signature header (strips "sha256=" prefix if present).
-// If maxAge > 0, verifies timestamp freshness.
+// If maxAge > 0 (5*time.Minute recommended), rejects timestamps older than
+// maxAge or more than WebhookMaxFutureSkew (300s) in the future.
 // input = timestamp + "." + string(body)
 // expected = hex(hmac-sha256(secret, input))
 // Returns true if signatures match using constant-time comparison.
@@ -41,7 +51,7 @@ func VerifyWebhook(secret string, headers http.Header, body []byte, maxAge time.
 
 		now := time.Now().Unix()
 		age := now - timestamp
-		if age < 0 || age > int64(maxAge.Seconds()) {
+		if age > int64(maxAge.Seconds()) || -age > int64(WebhookMaxFutureSkew.Seconds()) {
 			return false
 		}
 	}

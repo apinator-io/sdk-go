@@ -497,22 +497,57 @@ func TestAuthenticateChannel_Method(t *testing.T) {
 	}
 }
 
+const testWebhookSecret = "whsec_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+var testWebhookBody = []byte(`{"id":"cbb368a1-bc93-42bc-b939-51c7352cbd03","event":"member_added","app_id":"app-123","channel":"presence-room","user_id":"42","time_ms":1760000000000}`)
+
+func signedWebhookHeaders(secret string, at time.Time) http.Header {
+	timestamp := strconv.FormatInt(at.Unix(), 10)
+	headers := http.Header{}
+	headers.Set("X-Realtime-Signature", "sha256="+SignWebhookPayload(secret, timestamp, testWebhookBody))
+	headers.Set("X-Realtime-Timestamp", timestamp)
+	return headers
+}
+
 func TestVerifyWebhook_Method(t *testing.T) {
 	client := NewClient("app-123", "key-456", "secret-789", "eu")
 
-	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	body := []byte(`{"event":"test"}`)
+	headers := signedWebhookHeaders(testWebhookSecret, time.Now())
+	if !client.VerifyWebhook(testWebhookSecret, headers, testWebhookBody, 5*time.Minute) {
+		t.Error("expected webhook signed with the webhook secret to be valid")
+	}
+}
 
-	// Sign with client's secret
-	signature := SignWebhookPayload(client.secret, timestamp, body)
+func TestVerifyWebhook_MethodDoesNotUseAPISecret(t *testing.T) {
+	client := NewClient("app-123", "key-456", "secret-789", "eu")
 
-	headers := http.Header{}
-	headers.Set("X-Realtime-Signature", signature)
-	headers.Set("X-Realtime-Timestamp", timestamp)
+	headers := signedWebhookHeaders(client.secret, time.Now())
+	if client.VerifyWebhook(testWebhookSecret, headers, testWebhookBody, 0) {
+		t.Error("expected webhook signed with the API secret to be rejected")
+	}
+}
 
-	valid := client.VerifyWebhook(headers, body, 0)
-	if !valid {
-		t.Error("expected webhook to be valid")
+func TestVerifyWebhook_MethodEmptySecret(t *testing.T) {
+	client := NewClient("app-123", "key-456", "secret-789", "eu")
+
+	// Even a signature made with an empty key must not verify.
+	headers := signedWebhookHeaders("", time.Now())
+	if client.VerifyWebhook("", headers, testWebhookBody, 0) {
+		t.Error("expected empty webhook secret to be rejected")
+	}
+}
+
+func TestVerifyWebhook_MethodTimestampWindow(t *testing.T) {
+	client := NewClient("app-123", "key-456", "secret-789", "eu")
+
+	old := signedWebhookHeaders(testWebhookSecret, time.Now().Add(-10*time.Minute))
+	if client.VerifyWebhook(testWebhookSecret, old, testWebhookBody, 5*time.Minute) {
+		t.Error("expected expired timestamp to be rejected")
+	}
+
+	future := signedWebhookHeaders(testWebhookSecret, time.Now().Add(10*time.Minute))
+	if client.VerifyWebhook(testWebhookSecret, future, testWebhookBody, 5*time.Minute) {
+		t.Error("expected timestamp more than 300s in the future to be rejected")
 	}
 }
 
