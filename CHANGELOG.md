@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/apinator-io/sdk-go/compare/v1.0.0...v1.1.0) (2026-10-17)
+
+
+### Features
+
+* verify webhooks with the endpoint's webhook secret ([#3](https://github.com/apinator-io/sdk-go/issues/3)) ([f19f4a3](https://github.com/apinator-io/sdk-go/commit/f19f4a362ebac19e7fa1a9a0dc3450f02039bb56))
+
 ## 1.0.0 (2026-02-16)
 
 
