@@ -134,6 +134,52 @@ func TestVerifyWebhook_FreshTimestamp(t *testing.T) {
 	}
 }
 
+func TestVerifyWebhook_FutureTimestampWithinSkew(t *testing.T) {
+	secret := "my-secret-key"
+	timestamp := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)
+	body := []byte(`{"event":"channel_occupied","channel":"test-channel"}`)
+
+	headers := http.Header{}
+	headers.Set("X-Realtime-Signature", "sha256="+SignWebhookPayload(secret, timestamp, body))
+	headers.Set("X-Realtime-Timestamp", timestamp)
+
+	if !VerifyWebhook(secret, headers, body, 5*time.Minute) {
+		t.Error("expected webhook 60s in the future to be accepted (clock skew)")
+	}
+}
+
+func TestVerifyWebhook_FutureTimestampLargeMaxAge(t *testing.T) {
+	secret := "my-secret-key"
+	timestamp := strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)
+	body := []byte(`{"event":"channel_occupied","channel":"test-channel"}`)
+
+	headers := http.Header{}
+	headers.Set("X-Realtime-Signature", "sha256="+SignWebhookPayload(secret, timestamp, body))
+	headers.Set("X-Realtime-Timestamp", timestamp)
+
+	if VerifyWebhook(secret, headers, body, time.Hour) {
+		t.Error("expected webhook 10m in the future to be rejected regardless of maxAge")
+	}
+	if !VerifyWebhook(secret, headers, body, 0) {
+		t.Error("expected no freshness check when maxAge is 0")
+	}
+}
+
+func TestVerifyWebhook_MultiValueHeaders(t *testing.T) {
+	secret := "my-secret-key"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	body := []byte(`{"event":"channel_occupied","channel":"test-channel"}`)
+
+	headers := http.Header{}
+	headers.Add("X-Realtime-Signature", "sha256="+SignWebhookPayload(secret, timestamp, body))
+	headers.Add("X-Realtime-Signature", "sha256=deadbeef")
+	headers.Add("X-Realtime-Timestamp", timestamp)
+
+	if !VerifyWebhook(secret, headers, body, 5*time.Minute) {
+		t.Error("expected first header value to be used")
+	}
+}
+
 func TestVerifyWebhook_FutureTimestamp(t *testing.T) {
 	secret := "my-secret-key"
 	// Timestamp from future (should be invalid)

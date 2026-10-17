@@ -106,20 +106,29 @@ Retrieves information about a specific channel. Returns `nil, nil` if the channe
 ### `Client.VerifyWebhook`
 
 ```go
-func (c *Client) VerifyWebhook(headers http.Header, body []byte, maxAge time.Duration) bool
+func (c *Client) VerifyWebhook(webhookSecret string, headers http.Header, body []byte, maxAge time.Duration) bool
 ```
 
-Verifies a webhook signature using the client's secret. Convenience method that delegates to the standalone `VerifyWebhook` function.
+Verifies a webhook signature. Webhooks are signed with the webhook endpoint's own signing secret (`whsec_...`, shown in the console per endpoint), not the client's API secret. Convenience method that delegates to the standalone `VerifyWebhook` function.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
+| `webhookSecret` | `string` | The webhook endpoint's signing secret (`whsec_...`). An empty string always returns `false`. |
 | `headers` | `http.Header` | The HTTP headers from the webhook request |
 | `body` | `[]byte` | The raw request body |
-| `maxAge` | `time.Duration` | Maximum acceptable age of the webhook. Pass `0` to skip timestamp check. |
+| `maxAge` | `time.Duration` | Maximum acceptable age of the webhook (`5*time.Minute` recommended). Timestamps more than 300s in the future are also rejected. Pass `0` to skip the timestamp check. |
 
 **Returns:** `bool` — `true` if the signature is valid.
+
+The signature header is `X-Realtime-Signature: sha256=hex(hmac_sha256(webhookSecret, "{timestamp}.{raw_body}"))`, with the timestamp from `X-Realtime-Timestamp`. Deliveries also carry `X-Realtime-Event` and `X-Realtime-Delivery-ID`. Payload:
+
+```json
+{"id":"<event uuid>","event":"member_added","app_id":"...","channel":"presence-room","user_id":"42","time_ms":1760000000000}
+```
+
+`event` is one of `channel_occupied`, `channel_vacated`, `member_added`, `member_removed` (`user_id` only on the member events); the console's test sends `webhook.test`. Deliveries are at-least-once, so dedupe on `id`.
 
 ---
 
@@ -169,7 +178,7 @@ Returns the full auth response for a channel subscription, with the `Auth` field
 func VerifyWebhook(secret string, headers http.Header, body []byte, maxAge time.Duration) bool
 ```
 
-Verifies a webhook signature. Checks the `X-Realtime-Signature` header (strips `sha256=` prefix if present). If `maxAge > 0`, verifies timestamp freshness using the `X-Realtime-Timestamp` header.
+Verifies a webhook signature. `secret` is the webhook endpoint's signing secret (`whsec_...`), not the API secret. Checks the `X-Realtime-Signature` header (strips `sha256=` prefix if present). If `maxAge > 0`, rejects `X-Realtime-Timestamp` values older than `maxAge` or more than `WebhookMaxFutureSkew` (300s) in the future.
 
 **Returns:** `bool` — `true` if the signature is valid.
 

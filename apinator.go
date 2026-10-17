@@ -119,9 +119,18 @@ func (c *Client) GetChannel(ctx context.Context, channelName string) (*ChannelIn
 }
 
 // VerifyWebhook verifies a webhook signature.
-// This is a convenience method that delegates to the VerifyWebhook function.
-func (c *Client) VerifyWebhook(headers http.Header, body []byte, maxAge time.Duration) bool {
-	return VerifyWebhook(c.secret, headers, body, maxAge)
+//
+// Webhooks are signed with the webhook endpoint's own signing secret
+// (whsec_..., shown in the console per endpoint), not with the client's API
+// secret, so webhookSecret must be passed explicitly. It returns false if
+// webhookSecret is empty. If maxAge > 0 (5*time.Minute recommended),
+// timestamps older than maxAge or more than 300 seconds in the future are
+// rejected. It delegates to the standalone VerifyWebhook function.
+func (c *Client) VerifyWebhook(webhookSecret string, headers http.Header, body []byte, maxAge time.Duration) bool {
+	if webhookSecret == "" {
+		return false
+	}
+	return VerifyWebhook(webhookSecret, headers, body, maxAge)
 }
 
 // request performs an authenticated HTTP request to the Apinator API.
